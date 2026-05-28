@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ポモドーロタイマー</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #1a1a2e;
+      color: #eee;
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'Segoe UI', sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      user-select: none;
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 28px;
+    }
+
+    /* Phase label */
+    .phase-label {
+      font-size: 1.3rem;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      transition: color 0.6s ease;
+    }
+
+    /* Ring */
+    .timer-wrapper {
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .progress-ring {
+      transform: rotate(-90deg);
+      filter: drop-shadow(0 0 12px currentColor);
+    }
+
+    .ring-track {
+      fill: none;
+      stroke: #16213e;
+      stroke-width: 14;
+    }
+
+    .ring-fill {
+      fill: none;
+      stroke-width: 14;
+      stroke-linecap: round;
+      transition: stroke-dashoffset 0.9s linear, stroke 0.6s ease;
+    }
+
+    /* Center overlay */
+    .timer-center {
+      position: absolute;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      pointer-events: none;
+    }
+
+    .time-display {
+      font-size: clamp(2.8rem, 8vw, 4rem);
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.04em;
+      transition: color 0.6s ease;
+    }
+
+    .elapsed-display {
+      font-size: 0.8rem;
+      color: #555;
+      letter-spacing: 0.05em;
+    }
+
+    /* Pomodoro dots */
+    .dots-row {
+      display: flex;
+      gap: 12px;
+    }
+
+    .dot {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #16213e;
+      border: 2px solid #2a2a4a;
+      transition: background 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
+    }
+
+    .dot.filled {
+      border-color: transparent;
+      box-shadow: 0 0 6px currentColor;
+    }
+
+    /* Buttons */
+    .buttons {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+    }
+
+    .btn {
+      background: #16213e;
+      border: 1px solid #2a2a4a;
+      border-radius: 14px;
+      color: #ccc;
+      cursor: pointer;
+      font-size: 0.95rem;
+      padding: 12px 22px;
+      transition: background 0.2s, border-color 0.2s, transform 0.1s;
+      white-space: nowrap;
+    }
+
+    .btn:hover {
+      background: #1e2d4e;
+      border-color: #3a3a6a;
+      color: #fff;
+    }
+
+    .btn:active {
+      transform: scale(0.96);
+    }
+
+    .btn-main {
+      font-size: 1.15rem;
+      font-weight: 700;
+      padding: 16px 44px;
+      border-radius: 16px;
+      background: #16213e;
+      transition: background 0.2s, border-color 0.3s, color 0.3s, transform 0.1s;
+    }
+
+    .btn-main.running {
+      background: #1e1e3a;
+    }
+
+    /* Stats */
+    .stats {
+      font-size: 0.85rem;
+      color: #444;
+      letter-spacing: 0.04em;
+    }
+
+    .stats span {
+      color: #888;
+      font-weight: 600;
+    }
+
+    /* Notification permission banner */
+    .notif-banner {
+      font-size: 0.78rem;
+      color: #555;
+      cursor: pointer;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+    .notif-banner:hover { color: #888; }
+    .notif-banner.granted { color: #27ae60; cursor: default; text-decoration: none; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="phase-label" id="phaseLabel">作業中</div>
+
+  <div class="timer-wrapper">
+    <svg class="progress-ring" width="280" height="280" viewBox="0 0 280 280">
+      <circle class="ring-track" cx="140" cy="140" r="118"/>
+      <circle class="ring-fill"  cx="140" cy="140" r="118" id="ringFill"/>
+    </svg>
+    <div class="timer-center">
+      <div class="time-display" id="timeDisplay">25:00</div>
+      <div class="elapsed-display" id="elapsedDisplay">経過 00:00</div>
+    </div>
+  </div>
+
+  <div class="dots-row">
+    <div class="dot" id="d0"></div>
+    <div class="dot" id="d1"></div>
+    <div class="dot" id="d2"></div>
+    <div class="dot" id="d3"></div>
+  </div>
+
+  <div class="buttons">
+    <button class="btn" onclick="resetTimer()">🔄 リセット</button>
+    <button class="btn btn-main" id="mainBtn" onclick="toggleStartPause()">▶ スタート</button>
+    <button class="btn" onclick="skipPhase()">⏭ スキップ</button>
+  </div>
+
+  <div class="stats">今日の合計作業時間：<span id="totalWork">00:00</span></div>
+
+  <div class="notif-banner" id="notifBanner" onclick="requestNotifPermission()">
+    🔔 通知を有効にする
+  </div>
+</div>
+
+<script>
+  // ─── Phase definitions ─────────────────────────────────────────────────────
+  const PHASES = [
+    { label: '作業中',   duration: 25 * 60, type: 'work',  color: '#e05555' },
+    { label: '短い休憩', duration:  5 * 60, type: 'short', color: '#27ae60' },
+    { label: '作業中',   duration: 25 * 60, type: 'work',  color: '#e05555' },
+    { label: '短い休憩', duration:  5 * 60, type: 'short', color: '#27ae60' },
+    { label: '作業中',   duration: 25 * 60, type: 'work',  color: '#e05555' },
+    { label: '短い休憩', duration:  5 * 60, type: 'short', color: '#27ae60' },
+    { label: '作業中',   duration: 25 * 60, type: 'work',  color: '#e05555' },
+    { label: '長い休憩', duration: 15 * 60, type: 'long',  color: '#2980b9' },
+  ];
+
+  // ─── Ring geometry ─────────────────────────────────────────────────────────
+  const R    = 118;
+  const CIRC = 2 * Math.PI * R;
+
+  const ringFill = document.getElementById('ringFill');
+  ringFill.style.strokeDasharray  = CIRC;
+  ringFill.style.strokeDashoffset = 0;
+
+  // ─── State ─────────────────────────────────────────────────────────────────
+  let phaseIdx             = 0;
+  let timeRemaining        = PHASES[0].duration;
+  let elapsedInPhase       = 0;
+  let isRunning            = false;
+  let ticker               = null;
+  let completedWork        = 0;
+  let totalWorkSec         = 0;
+
+  // Wall-clock tracking (prevents setInterval drift)
+  let resumeTime           = 0;
+  let phaseElapsedAtResume = 0;
+  let workSecAtResume      = 0;
+
+  // ─── DOM refs ──────────────────────────────────────────────────────────────
+  const elPhaseLabel  = document.getElementById('phaseLabel');
+  const elTimeDisplay = document.getElementById('timeDisplay');
+  const elElapsed     = document.getElementById('elapsedDisplay');
+  const elMainBtn     = document.getElementById('mainBtn');
+  const elTotalWork   = document.getElementById('totalWork');
+  const elBanner      = document.getElementById('notifBanner');
+  const dots          = [0,1,2,3].map(i => document.getElementById(`d${i}`));
+
+  // ─── Helpers ───────────────────────────────────────────────────────────────
+  function fmt(sec) {
+    const m = String(Math.floor(sec / 60)).padStart(2, '0');
+    const s = String(sec % 60).padStart(2, '0');
+    return `${m}:${s}`;
+  }
+
+  // ─── Render ────────────────────────────────────────────────────────────────
+  function render() {
+    const phase    = PHASES[phaseIdx];
+    const elapsed  = phase.duration - timeRemaining;
+    const progress = elapsed / phase.duration;
+    const offset   = CIRC * progress;
+
+    ringFill.style.strokeDashoffset = offset;
+    ringFill.style.stroke           = phase.color;
+
+    elTimeDisplay.textContent = fmt(timeRemaining);
+    elTimeDisplay.style.color = phase.color;
+    elElapsed.textContent     = `経過 ${fmt(elapsedInPhase)}`;
+    elPhaseLabel.textContent  = phase.label;
+    elPhaseLabel.style.color  = phase.color;
+    elTotalWork.textContent   = fmt(totalWorkSec);
+
+    dots.forEach((dot, i) => {
+      if (i < completedWork) {
+        dot.classList.add('filled');
+        dot.style.background  = '#e05555';
+        dot.style.color       = '#e05555';
+        dot.style.borderColor = 'transparent';
+        dot.style.boxShadow   = '0 0 6px #e05555';
+      } else {
+        dot.classList.remove('filled');
+        dot.style.background  = '#16213e';
+        dot.style.color       = '';
+        dot.style.borderColor = '#2a2a4a';
+        dot.style.boxShadow   = 'none';
+      }
+    });
+  }
+
+  // ─── Phase transition ──────────────────────────────────────────────────────
+  function advancePhase() {
+    const current = PHASES[phaseIdx];
+
+    if (current.type === 'work') completedWork++;
+    if (phaseIdx === PHASES.length - 1) completedWork = 0;
+
+    phaseIdx             = (phaseIdx + 1) % PHASES.length;
+    timeRemaining        = PHASES[phaseIdx].duration;
+    elapsedInPhase       = 0;
+    phaseElapsedAtResume = 0;
+    workSecAtResume      = totalWorkSec;
+    resumeTime           = Date.now();
+  }
+
+  function phaseComplete() {
+    // Stop the ticker first
+    clearInterval(ticker);
+    isRunning = false;
+
+    advancePhase();
+
+    const next = PHASES[phaseIdx];
+    let msg;
+    if (next.type === 'work')      msg = '作業を始めましょう！スタートを押してください。';
+    else if (next.type === 'long') msg = '長い休憩です！スタートを押してください。';
+    else                           msg = '短い休憩です！スタートを押してください。';
+
+    sendNotification(msg);
+    playBeep();
+
+    elMainBtn.textContent = '▶ スタート';
+    elMainBtn.classList.remove('running');
+    render();
+  }
+
+  // ─── Tick (wall-clock based — no drift) ───────────────────────────────────
+  function tick() {
+    const nowSec = Math.floor((Date.now() - resumeTime) / 1000);
+
+    elapsedInPhase = phaseElapsedAtResume + nowSec;
+    timeRemaining  = Math.max(0, PHASES[phaseIdx].duration - elapsedInPhase);
+
+    if (PHASES[phaseIdx].type === 'work') {
+      totalWorkSec = workSecAtResume + nowSec;
+    }
+
+    if (timeRemaining <= 0) {
+      phaseComplete();
+    } else {
+      render();
+    }
+  }
+
+  // ─── Controls ──────────────────────────────────────────────────────────────
+  function toggleStartPause() {
+    if (isRunning) {
+      const nowSec = Math.floor((Date.now() - resumeTime) / 1000);
+      phaseElapsedAtResume += nowSec;
+      if (PHASES[phaseIdx].type === 'work') workSecAtResume += nowSec;
+
+      clearInterval(ticker);
+      isRunning = false;
+      elMainBtn.textContent = '▶ スタート';
+      elMainBtn.classList.remove('running');
+    } else {
+      resumeTime = Date.now();
+      ticker     = setInterval(tick, 200);
+      isRunning  = true;
+      elMainBtn.textContent = '⏸ 一時停止';
+      elMainBtn.classList.add('running');
+    }
+  }
+
+  function skipPhase() {
+    const wasRunning = isRunning;
+    if (isRunning) { clearInterval(ticker); isRunning = false; }
+
+    advancePhase();
+    render();
+
+    if (wasRunning) {
+      resumeTime = Date.now();
+      ticker     = setInterval(tick, 200);
+      isRunning  = true;
+      elMainBtn.textContent = '⏸ 一時停止';
+      elMainBtn.classList.add('running');
+    } else {
+      elMainBtn.textContent = '▶ スタート';
+      elMainBtn.classList.remove('running');
+    }
+  }
+
+  function resetTimer() {
+    clearInterval(ticker);
+    isRunning            = false;
+    phaseIdx             = 0;
+    timeRemaining        = PHASES[0].duration;
+    elapsedInPhase       = 0;
+    completedWork        = 0;
+    totalWorkSec         = 0;
+    phaseElapsedAtResume = 0;
+    workSecAtResume      = 0;
+    resumeTime           = 0;
+    elMainBtn.textContent = '▶ スタート';
+    elMainBtn.classList.remove('running');
+    render();
+  }
+
+  // ─── Notifications (Web Notifications API) ─────────────────────────────────
+  function requestNotifPermission() {
+    if (!('Notification' in window)) return;
+    Notification.requestPermission().then(updateBanner);
+  }
+
+  function updateBanner(permission) {
+    const perm = permission || Notification.permission;
+    if (perm === 'granted') {
+      elBanner.textContent = '🔔 通知：有効';
+      elBanner.classList.add('granted');
+    } else if (perm === 'denied') {
+      elBanner.textContent = '🔕 通知：ブロック済み（ブラウザ設定から許可してください）';
+      elBanner.style.cursor = 'default';
+      elBanner.style.textDecoration = 'none';
+    }
+  }
+
+  function sendNotification(message) {
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'granted') {
+      new Notification('ポモドーロタイマー', { body: message, icon: '' });
+    }
+  }
+
+  // ─── Audio (Web Audio API) — 5秒間アラーム ──────────────────────────────────
+  function playBeep() {
+    try {
+      const ctx      = new (window.AudioContext || window.webkitAudioContext)();
+      const totalSec = 5;
+      const beepLen  = 0.18;
+      const interval = 0.5;
+      const count    = Math.floor(totalSec / interval); // 10回
+
+      for (let i = 0; i < count; i++) {
+        const osc  = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.type = 'sine';
+        osc.frequency.value = (i % 2 === 0) ? 1000 : 800;
+
+        const t0 = ctx.currentTime + i * interval;
+        const t1 = t0 + beepLen;
+
+        gain.gain.setValueAtTime(0, t0);
+        gain.gain.linearRampToValueAtTime(0.5, t0 + 0.01);
+        gain.gain.setValueAtTime(0.5, t1 - 0.02);
+        gain.gain.linearRampToValueAtTime(0, t1);
+
+        osc.start(t0);
+        osc.stop(t1);
+      }
+    } catch (_) {}
+  }
+
+  // ─── Init ──────────────────────────────────────────────────────────────────
+  updateBanner();
+  render();
+</script>
+</body>
+</html>
